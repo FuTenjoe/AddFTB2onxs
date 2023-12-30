@@ -591,7 +591,7 @@ io.out.last_stage_meta := RegEnable(RegEnable(FTBMeta(writeWay.asUInt(), s1_hit,
   XSDebug("s2_br_taken_mask=%b, s2_real_taken_mask=%b\n",
     io.in.bits.resp_in(0).s2.full_pred.br_taken_mask.asUInt, io.out.s2.full_pred.real_slot_taken_mask().asUInt)
   XSDebug("s2_target=%x\n", io.out.s2.getTarget)
-  //XSDebug(io.update.valid && !u_meta.hit,"ftb_commit_miss_time=%d, req_pc=%x\n", GTimer(), io.update.bits.pc)
+  // XSDebug(io.update.valid && !u_meta.hit,"ftb_commit_miss_time=%d, req_pc=%x\n", GTimer(), io.update.bits.pc)
   XSDebug("if_ftb_commit_miss=%d, req_pc=%x\n", io.update.valid && !u_meta.hit, io.update.bits.pc)
 
   ftb_entry.display(true.B)
@@ -605,16 +605,16 @@ io.out.last_stage_meta := RegEnable(RegEnable(FTBMeta(writeWay.asUInt(), s1_hit,
   XSPerfAccumulate("ftbp_hit_ftb_read_miss", io.in.bits.resp_in(0).s2.full_pred.hit && !s2_hit)
   XSPerfAccumulate("ftb_fallthrouerror", s2_hit && io.out.s2.full_pred.fallThroughErr && !io.in.bits.resp_in(0).s2.full_pred.hit && !io.out.s2.full_pred.br_taken_mask.reduce(_||_))
 
-  //XSPerfAccumulate("ftb1_victim_valid", ftbio.victim.valid)
+  // XSPerfAccumulate("ftb1_victim_valid", ftbio.victim.valid)
 
   XSPerfAccumulate("ftb_update_req", io.update.valid)
   XSPerfAccumulate("ftb_update_ignored", io.update.valid && io.update.bits.old_entry)
   XSPerfAccumulate("ftb_updated", u_valid)
   XSDebug(u_valid, "ftb_update_pc = %x, update_pred_hit=%b, update_false_hit=%b\n", update.pc, update.pred_hit, update.false_hit)
 
-  override val perfEvents = Seq(
-    ("ftb_commit_hits            ", RegNext(io.update.valid)  &&  u_meta.hit),
-    ("ftb_commit_misses          ", RegNext(io.update.valid)  && !u_meta.hit),
-  )
+  // override val perfEvents = Seq(
+  //   ("ftb_commit_hits            ", RegNext(io.update.valid)  &&  u_meta.hit),
+  //   ("ftb_commit_misses          ", RegNext(io.update.valid)  && !u_meta.hit),
+  // )
   generatePerfEvent()
 }

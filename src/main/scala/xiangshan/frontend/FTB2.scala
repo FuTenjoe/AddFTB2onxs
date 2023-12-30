@@ -104,6 +104,8 @@ class FTB2(implicit p: Parameters) extends BasePredictor with FTB2Params with BP
       val ftb1_victim = Flipped(Valid(new FTBEntry))
       val ftb1_victim_pc = Input(UInt(VAddrBits.W))
 
+      val duplicate_pc = Input(Bool())
+
       //val victim_from_ftb1 = Flipped(Valid(new FTBEntryWithTag))
     })
 
@@ -218,7 +220,8 @@ class FTB2(implicit p: Parameters) extends BasePredictor with FTB2Params with BP
 
 
     // Update logic
-    val u_w_valid = io.update_write_data.valid
+    val before_u_w_valid = io.update_write_data.valid 
+    val u_w_valid = before_u_w_valid && !((io.update_pc === RegNext(io.update_pc)) && RegNext(before_u_w_valid))
     val u_data = io.update_write_data.bits
     val u_idx = ftb2Addr.getIdx(io.update_pc)
     val allocWriteWay = allocWay(VecInit(update_entries.map(_.valid)).asUInt, u_idx)
@@ -308,33 +311,40 @@ when(ftb2_s3_hit){
   val update = io.update.bits
 
   val u_meta = update.meta.asTypeOf(new FTB2Meta)
-  val u_valid = io.update.valid && !io.update.bits.old_entry
+  val before_u_valid = io.update.valid && !io.update.bits.old_entry
+  val duplicate_pc = Wire(Bool())
+  duplicate_pc := update.pc === RegNext(update.pc)
+  ftb2Bank.io.duplicate_pc := duplicate_pc
+  val u_valid = before_u_valid && (!duplicate_pc || !RegNext(before_u_valid)) //避免连续两次写入
 
   val delay2_pc = DelayN(update.pc, 2)
   val delay3_pc = DelayN(update.pc, 3)
   val delay2_entry = DelayN(update.ftb_entry, 2)
   val delay3_entry = DelayN(update.ftb_entry, 3)
 
-  val update_now = u_valid && u_meta.hit
-  val update_need_read = u_valid && !u_meta.hit
-
+  val before_update_now = u_valid && u_meta.hit
+  val update_now = before_update_now && (!((update.pc === delay2_pc) && DelayN(before_update_now, 2))) //避免连续两次写入，第一次写入未被第二次读取
+  val before_update_need_read = u_valid && !u_meta.hit
+  
+  val update_need_read = before_update_need_read && (!duplicate_pc || !RegNext(before_update_need_read))
+  
   io.s1_ready := ftb2Bank.io.req_pc.ready && !(update_need_read) && !RegNext(update_need_read) && !RegNext(RegNext(update_need_read))
 
-  ftb2Bank.io.u_req_pc.valid := update_need_read
-  ftb2Bank.io.u_req_pc.bits := update.pc
+  ftb2Bank.io.u_req_pc.valid := Mux(ftb2Bank.io.req_pc.ready, update_need_read, HoldUnless(RegNext(update_need_read), ftb2Bank.io.req_pc.ready) && ftb2Bank.io.req_pc.ready)
+  ftb2Bank.io.u_req_pc.bits := Mux(ftb2Bank.io.req_pc.ready, update.pc, HoldUnless(RegNext(update.pc), ftb2Bank.io.req_pc.ready))
 
   val ftb2_write = Wire(new FTB2EntryWithTag)
   ftb2_write.entry := Mux(update_now, update.ftb_entry, delay3_entry)
   ftb2_write.tag := ftb2Addr.getTag(Mux(update_now, update.pc, delay3_pc))(tagSize - 1, 0)
 
-  val write_valid = update_now || DelayN(u_valid && !u_meta.hit, 3)
+  val write_valid = update_now || DelayN(ftb2Bank.io.u_req_pc.valid, 3) 
 
   ftb2Bank.io.update_write_data.valid := write_valid
   ftb2Bank.io.update_write_data.bits := ftb2_write
   ftb2Bank.io.update_pc := Mux(update_now, update.pc, delay3_pc)
   ftb2Bank.io.update_write_way := Mux(update_now, u_meta.writeWay, RegNext(ftb2Bank.io.update_hits.bits))
   ftb2Bank.io.update_write_alloc := Mux(update_now, false.B, RegNext(!ftb2Bank.io.update_hits.valid))
-  ftb2Bank.io.update_access := u_valid && !u_meta.hit
+  ftb2Bank.io.update_access := ftb2Bank.io.u_req_pc.valid
   ftb2Bank.io.s1_fire := io.s1_fire
   ftb2Bank.io.s2_fire := io.s2_fire
 
@@ -344,15 +354,15 @@ when(ftb2_s3_hit){
   ftb2io.ftb2_hit <> ftb2Bank.io.ftb2_hit
   ftb2io.ftb2_hit_pc := ftb2Bank.io.ftb2_hit_pc
 
-
+  val ftb2_fallthrou_error_valid = !io.in.bits.resp_in(0).s3.full_pred.hit && ftb2_s3_hit && io.out.s3.full_pred.fallThroughErr && !io.out.s3.full_pred.br_taken_mask.reduce(_||_)
   ftb2_entry.display(true.B)
-  //assert(!RegNext(!io.in.bits.resp_in(0).s3.full_pred.hit && ftb2_s3_hit && io.out.s3.full_pred.fallThroughErr && !io.out.s3.full_pred.br_taken_mask.reduce(_||_)))
+  assert(!RegNext(ftb2_fallthrou_error_valid))
   //ftb2 read hit to ftbp
   //io.ftb2_up.valid := s3_hit
   //io.ftb2_up.bits := ftb2Bank.io.read_hit_entrywithtag
 
-  XSPerfAccumulate("ftb2_read_hits", RegNext(io.s2_fire) && ftb2_s2_hit)  //s3
-  XSPerfAccumulate("ftb2_read_misses", RegNext(io.s2_fire) && !ftb2_s2_hit)
+  XSPerfAccumulate("ftb2_read_hits", RegNext(io.s1_fire) && ftb2_s2_hit)  //s2
+  XSPerfAccumulate("ftb2_read_misses", RegNext(io.s1_fire) && !ftb2_s2_hit)
 
   XSPerfAccumulate("ftb2_commit_hits", io.update.valid && u_meta.hit)
   XSPerfAccumulate("ftb2_commit_misses", io.update.valid && !u_meta.hit)
