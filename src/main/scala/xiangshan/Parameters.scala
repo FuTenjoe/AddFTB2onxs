@@ -23,7 +23,7 @@ import xiangshan.backend.exu._
 import xiangshan.backend.dispatch.DispatchParameters
 import xiangshan.cache.DCacheParameters
 import xiangshan.cache.prefetch._
-import xiangshan.frontend.{BasePredictor, BranchPredictionResp, FTB, FTBP, FTB2, FakePredictor, RAS, Tage, ITTage, Tage_SC, FauFTB}
+import xiangshan.frontend.{BasePredictor, BranchPredictionResp, FTB, FTBP,FTB2, FakePredictor, RAS, Tage, ITTage, Tage_SC, FauFTB}
 import xiangshan.frontend.icache.ICacheParameters
 import xiangshan.cache.mmu.{L2TLBParameters, TLBParameters}
 import freechips.rocketchip.diplomacy.AddressSet
@@ -108,16 +108,14 @@ case class XSCoreParameters
     val ras = Module(new RAS()(p))
     val ittage = Module(new ITTage()(p))
     val preds = Seq(ubtb, tage, ftbp, ftb, ftb2, ittage, ras)
-    // val preds = Seq(ubtb, tage, ftb, ittage, ras)
-    //val preds = Seq(ubtb, tage,  ftb, ittage, ras)
     preds.map(_.io := DontCare)
     
-    
+    ftbp.io := DontCare
     ftbp.ftbpio := DontCare
     ftb2.ftb2io := DontCare
     ftb.ftbio := DontCare
 
-    // ftb1
+    //ftb1
     ftb.ftbio.ftbp_hit <> ftbp.ftbpio.ftbp_hit
     ftb.ftbio.ftbp_hit_pc := ftbp.ftbpio.ftbp_hit_pc
 
@@ -134,15 +132,12 @@ case class XSCoreParameters
     ftb2.ftb2io.ftb1_s2_hit := ftb.ftbio.ftb_s2_hit
 
     ubtb.io.in.bits.resp_in(0) := resp_in
-    // ftbp.io.in.bits.resp_in(0)  := ubtb.io.out
-    tage.io.in.bits.resp_in(0) := ftbp.io.out
+    //ftbp.io.in.bits.resp_in(0)  := ubtb.io.out
+    tage.io.in.bits.resp_in(0) := ubtb.io.out
     ftbp.io.in.bits.resp_in(0)  := tage.io.out
     ftb.io.in.bits.resp_in(0)  := ftbp.io.out
     ftb2.io.in.bits.resp_in(0)  := ftb.io.out
-    // ftb.io.in.bits.resp_in(0)  := tage.io.out
-    ittage.io.in.bits.resp_in(0)  := ftb.io.out
-    // ftb.io.in.bits.resp_in(0)  := tage.io.out
-    // ittage.io.in.bits.resp_in(0) := ftb.io.out
+    ittage.io.in.bits.resp_in(0)  := ftb2.io.out
     ras.io.in.bits.resp_in(0) := ittage.io.out
     (preds, ras.io.out)
     }),
